@@ -1,145 +1,147 @@
 import pygame
 import math
+import sys
 
-class PendulumSimulator:
-    def __init__(self):
-        pygame.init()
+# Initialize Pygame
+pygame.init()
 
-        # Screen settings
-        self.WIDTH, self.HEIGHT = 1000, 700
-        self.screen = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
-        pygame.display.set_caption("Pendulum Simulator")
+# Screen dimensions
+WIDTH, HEIGHT = 1000, 700
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Pendulum Simulator")
 
-        # Colors
-        self.WHITE = (255, 255, 255)
-        self.BLACK = (0, 0, 0)
-        self.RED = (255, 0, 0)
-        self.GRAY = (200, 200, 200)
+# Colors
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+RED = (255, 0, 0)
+BLUE = (0, 0, 255)
+GRAY = (200, 200, 200)
 
-        # Pendulum settings
-        self.origin = (self.WIDTH // 2, 100)
-        self.length = 250
-        self.radius = 20
-        self.mass = 1
-        self.gravity = 9.8
-        self.friction = 0.001
-        self.angle = math.pi / 4
+# Pendulum properties
+class Pendulum:
+    def __init__(self, origin, length, angle, mass=1, gravity=9.8, friction=0.001):
+        self.origin = origin
+        self.length = length
+        self.angle = angle
+        self.mass = mass
+        self.gravity = gravity
+        self.friction = friction
         self.omega = 0
 
-        # Time settings
-        self.FPS = 60
-        self.dt = 1 / self.FPS
-        self.clock = pygame.time.Clock()
-
-        # Dragging state
-        self.is_dragging = False
-
-        # Slider settings
-        self.sliders = {
-            "gravity": self.create_slider(50, self.HEIGHT - 190, 300, 10, self.gravity / 50),
-            "friction": self.create_slider(50, self.HEIGHT - 130, 300, 10, self.friction * 100),
-            "length": self.create_slider(50, self.HEIGHT - 70, 300, 10, self.length / 400),
-            "mass": self.create_slider(50, self.HEIGHT - 20, 300, 10, self.mass / 10),
-        }
-
-        self.running = True
-
-    def create_slider(self, x, y, width, height, ratio):
-        handle_x = x + int(ratio * width)
-        return {
-            "track": pygame.Rect(x, y, width, height),
-            "handle": pygame.Rect(handle_x, y - 5, 10, 20),
-        }
-
     def calculate_alpha(self):
-        return (-self.gravity / self.length) * math.sin(self.angle) - self.friction * self.omega
+        return (-self.gravity / (self.length / 100)) * math.sin(self.angle) - self.friction * self.omega
 
-    def get_pendulum_position(self):
+    def update_position(self, dt):
+        alpha = self.calculate_alpha()
+        self.omega += alpha * dt
+        self.angle += self.omega * dt
+        self.omega *= (1 - self.friction)
+
+    def get_position(self):
         x = self.origin[0] + self.length * math.sin(self.angle)
         y = self.origin[1] + self.length * math.cos(self.angle)
         return int(x), int(y)
 
-    def handle_dragging(self):
-        if self.is_dragging:
-            mouse_x, mouse_y = pygame.mouse.get_pos()
-            dx = mouse_x - self.origin[0]
-            dy = mouse_y - self.origin[1]
-            self.angle = math.atan2(dx, dy)
-            self.omega = 0
-        else:
-            alpha = self.calculate_alpha()
-            self.omega += alpha * self.dt
-            self.angle += self.omega * self.dt
-            self.omega *= (1 - self.friction)
+# Slider properties
+class Slider:
+    def __init__(self, x, y, width, value, max_value, step=1):
+        self.rect = pygame.Rect(x, y, width, 10)
+        self.handle = pygame.Rect(x + int(value / max_value * width), y - 5, 10, 20)
+        self.value = value
+        self.max_value = max_value
+        self.step = step
+        self.dragging = False
 
-    def draw_pendulum(self):
-        position = self.get_pendulum_position()
-        pygame.draw.line(self.screen, self.BLACK, self.origin, position, 2)
-        pygame.draw.circle(self.screen, self.RED, position, self.radius)
+    def draw(self, label, font):
+        pygame.draw.rect(screen, GRAY, self.rect)
+        pygame.draw.rect(screen, BLACK, self.handle)
+        label_surface = font.render(label, True, BLACK)
+        screen.blit(label_surface, (self.rect.x, self.rect.y - 25))
 
-    def draw_sliders(self):
-        font = pygame.font.SysFont(None, 24)
+    def update_value(self, mouse_x):
+        self.handle.x = max(self.rect.x, min(mouse_x, self.rect.x + self.rect.width))
+        self.value = ((self.handle.x - self.rect.x) / self.rect.width) * self.max_value
 
-        for name, slider in self.sliders.items():
-            pygame.draw.rect(self.screen, self.GRAY, slider["track"])
-            pygame.draw.rect(self.screen, self.BLACK, slider["handle"])
-            value = self.get_slider_value(name)
-            label = font.render(f"{name.capitalize()}: {value:.2f}", True, self.BLACK)
-            self.screen.blit(label, (slider["track"].x, slider["track"].y - 30))
+# Main loop
+def main():
+    origin = (WIDTH // 2, 100)
+    pendulum = Pendulum(origin, 250, math.pi / 4)
+    sliders = {
+        "gravity": Slider(50, HEIGHT - 190, 300, pendulum.gravity, 50),
+        "friction": Slider(50, HEIGHT - 130, 300, pendulum.friction * 100, 100),
+        "length": Slider(50, HEIGHT - 70, 300, pendulum.length, 400),
+        "mass": Slider(50, HEIGHT - 20, 300, pendulum.mass, 10)
+    }
 
-    def get_slider_value(self, name):
-        handle = self.sliders[name]["handle"]
-        track = self.sliders[name]["track"]
-        ratio = (handle.x - track.x) / track.width
+    FPS = 60
+    dt = 1 / FPS
+    clock = pygame.time.Clock()
 
-        if name == "gravity":
-            self.gravity = ratio * 50
-        elif name == "friction":
-            self.friction = ratio / 100
-        elif name == "length":
-            self.length = ratio * 400
-        elif name == "mass":
-            self.mass = ratio * 10
+    font = pygame.font.SysFont(None, 24)
 
-        return {
-            "gravity": self.gravity,
-            "friction": self.friction,
-            "length": self.length,
-            "mass": self.mass,
-        }[name]
+    running = True
+    is_dragging = False
 
-    def update_sliders(self):
+    while running:
+        screen.fill(WHITE)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                mouse_x, mouse_y = pygame.mouse.get_pos()
+                bob_x, bob_y = pendulum.get_position()
+                distance = math.sqrt((mouse_x - bob_x) ** 2 + (mouse_y - bob_y) ** 2)
+                if distance <= 20:
+                    is_dragging = True
+                for slider in sliders.values():
+                    if slider.handle.collidepoint(mouse_x, mouse_y):
+                        slider.dragging = True
+            if event.type == pygame.MOUSEBUTTONUP:
+                is_dragging = False
+                for slider in sliders.values():
+                    slider.dragging = False
+
         if pygame.mouse.get_pressed()[0]:
             mouse_x, mouse_y = pygame.mouse.get_pos()
-            for name, slider in self.sliders.items():
-                if slider["handle"].collidepoint(mouse_x, mouse_y):
-                    slider["handle"].x = max(slider["track"].x, min(mouse_x, slider["track"].x + slider["track"].width))
+            if is_dragging:
+                dx = mouse_x - pendulum.origin[0]
+                dy = mouse_y - pendulum.origin[1]
+                pendulum.angle = math.atan2(dx, dy)
+                pendulum.omega = 0
+            else:
+                for name, slider in sliders.items():
+                    if slider.dragging:
+                        slider.update_value(mouse_x)
+                        if name == "gravity":
+                            pendulum.gravity = slider.value
+                        elif name == "friction":
+                            pendulum.friction = slider.value / 100
+                        elif name == "length":
+                            pendulum.length = slider.value
+                        elif name == "mass":
+                            pendulum.mass = slider.value
 
-    def run(self):
-        while self.running:
-            self.screen.fill(self.WHITE)
+        if not is_dragging:
+            pendulum.update_position(dt)
 
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self.running = False
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    bob_x, bob_y = self.get_pendulum_position()
-                    mouse_x, mouse_y = pygame.mouse.get_pos()
-                    distance = math.sqrt((mouse_x - bob_x) ** 2 + (mouse_y - bob_y) ** 2)
-                    if distance <= self.radius:
-                        self.is_dragging = True
-                elif event.type == pygame.MOUSEBUTTONUP:
-                    self.is_dragging = False
+        # Draw the y-line (vertical reference line)
+        pygame.draw.line(screen, BLACK, pendulum.origin, (pendulum.origin[0], HEIGHT), 1)
 
-            self.update_sliders()
-            self.handle_dragging()
-            self.draw_pendulum()
-            self.draw_sliders()
+        # Draw the x-line (horizontal reference line at the top of the y-line)
+        pygame.draw.line(screen, BLACK, (0, pendulum.origin[1]), (WIDTH, pendulum.origin[1]), 1)
 
-            pygame.display.flip()
-            self.clock.tick(self.FPS)
+        pygame.draw.line(screen, BLACK, pendulum.origin, pendulum.get_position(), 2)
+        pygame.draw.circle(screen, RED, pendulum.get_position(), 20)
 
-        pygame.quit()
+        for name, slider in sliders.items():
+            slider.draw(f"{name.capitalize()}: {slider.value:.2f}", font)
+
+        pygame.display.flip()
+        clock.tick(FPS)
+
+    pygame.quit()
+    sys.exit()
 
 if __name__ == "__main__":
-    PendulumSimulator().run()
+    main()
